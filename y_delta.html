@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Y-Δ (스타-델타) 기동 회로 3D 시뮬레이터</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- OrbitControls -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;600;700&display=swap');
+    body {
+      font-family: 'Pretendard', sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #0f172a;
+      color: #f8fafc;
+      user-select: none;
+    }
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="w-screen h-screen overflow-hidden text-slate-100">
+
+  <!-- 3D Canvas -->
+  <div id="canvas-container"></div>
+
+  <!-- UI Overlay Layer -->
+  <div class="relative z-10 w-full h-full pointer-events-none flex flex-col justify-between p-4 md:p-6">
+
+    <!-- Top Header & Status Bar -->
+    <header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pointer-events-auto">
+      <div class="glass-panel p-4 rounded-2xl shadow-xl flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+          <i class="fa-solid fa-bolt text-xl"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-white tracking-wide">Y-Δ (스타-델타) 기동 회로 3D 시뮬레이터</h1>
+          <p class="text-xs text-slate-400">3상 유도전동기 기동 제어반 실습 및 상태 모니터링</p>
+        </div>
+      </div>
+
+      <!-- Telemetry Dashboard -->
+      <div class="glass-panel px-5 py-3 rounded-2xl shadow-xl flex items-center gap-6 text-sm">
+        <div class="flex flex-col">
+          <span class="text-xs text-slate-400">전압 (L1-L2-L3)</span>
+          <span id="display-voltage" class="font-mono font-bold text-emerald-400">0 V</span>
+        </div>
+        <div class="w-px h-8 bg-slate-700"></div>
+        <div class="flex flex-col">
+          <span class="text-xs text-slate-400">전류 (A)</span>
+          <span id="display-current" class="font-mono font-bold text-amber-400">0.0 A</span>
+        </div>
+        <div class="w-px h-8 bg-slate-700"></div>
+        <div class="flex flex-col">
+          <span class="text-xs text-slate-400">모터 회전수</span>
+          <span id="display-rpm" class="font-mono font-bold text-cyan-400">0 RPM</span>
+        </div>
+        <div class="w-px h-8 bg-slate-700"></div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-400">운전 상태:</span>
+          <span id="status-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+            OFF (정지)
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Center Left: Control Console -->
+    <div class="flex-1 flex justify-between items-center my-4">
+      <div class="glass-panel p-4 rounded-2xl shadow-2xl pointer-events-auto flex flex-col gap-4 w-64 border border-slate-700/50">
+        <div class="flex items-center justify-between border-b border-slate-700/60 pb-2">
+          <span class="text-sm font-semibold text-slate-200"><i class="fa-solid fa-sliders mr-2 text-blue-400"></i>제어 콘솔</span>
+          <span class="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30">Manual</span>
+        </div>
+
+        <!-- CB Switch -->
+        <div class="flex items-center justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700/40">
+          <div class="flex flex-col">
+            <span class="text-xs font-semibold text-slate-300">CB (배선용 차단기)</span>
+            <span id="cb-status-text" class="text-[10px] text-slate-400">차단됨 (OFF)</span>
+          </div>
+          <button id="btn-cb-toggle" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition shadow">
+            투입 (ON)
+          </button>
+        </div>
+
+        <!-- Buttons -->
+        <div class="grid grid-cols-2 gap-3">
+          <button id="btn-start" class="flex flex-col items-center justify-center p-3 bg-gradient-to-b from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 active:scale-95 text-white rounded-xl shadow-lg shadow-emerald-900/40 border border-emerald-500/30 transition">
+            <i class="fa-solid fa-play text-lg mb-1"></i>
+            <span class="text-xs font-bold">기동 (ON)</span>
+          </button>
+          <button id="btn-stop" class="flex flex-col items-center justify-center p-3 bg-gradient-to-b from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-95 text-white rounded-xl shadow-lg shadow-rose-900/40 border border-rose-500/30 transition">
+            <i class="fa-solid fa-square text-lg mb-1"></i>
+            <span class="text-xs font-bold">정지 (OFF)</span>
+          </button>
+        </div>
+
+        <!-- Timer Setting -->
+        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/40 flex flex-col gap-2">
+          <div class="flex justify-between text-xs">
+            <span class="text-slate-300">Y-Δ 전환 타이머</span>
+            <span id="timer-val-display" class="font-mono text-cyan-400 font-bold">5.0 초</span>
+          </div>
+          <input type="range" id="timer-range" min="2" max="15" step="0.5" value="5" class="w-full accent-cyan-400 cursor-pointer">
+          <!-- Countdown bar -->
+          <div class="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-1">
+            <div id="timer-progress" class="bg-cyan-400 h-full w-0 transition-all duration-100"></div>
+          </div>
+        </div>
+
+        <!-- View Controls -->
+        <div class="flex flex-col gap-2 pt-2 border-t border-slate-700/60 text-xs">
+          <button id="btn-toggle-wires" class="flex items-center justify-between p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition">
+            <span><i class="fa-solid fa-code-branch mr-2 text-amber-400"></i>배선 표시</span>
+            <span id="wire-status-text" class="text-emerald-400 font-bold">ON</span>
+          </button>
+          <button id="btn-toggle-schematic" class="flex items-center justify-between p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition">
+            <span><i class="fa-solid fa-diagram-project mr-2 text-purple-400"></i>2D 회로도 팝업</span>
+            <span class="text-slate-400 font-bold">보기</span>
+          </button>
+          <button id="btn-reset-view" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition text-center text-slate-300">
+            <i class="fa-solid fa-rotate-left mr-1"></i> 시점 초기화
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Info Panel / Right floating tip -->
+      <div id="info-overlay" class="glass-panel p-4 rounded-2xl shadow-xl w-72 pointer-events-auto hidden md:block">
+        <h3 class="text-sm font-bold text-slate-200 mb-2 flex items-center gap-2">
+          <i class="fa-solid fa-circle-info text-blue-400"></i> 동작 단계 안내
+        </h3>
+        <ol id="step-list" class="text-xs text-slate-300 space-y-2">
+          <li class="p-2 rounded bg-slate-800/50 border border-slate-700/40 text-blue-400 font-semibold" id="step-1">
+            1. CB(차단기)를 ON 하여 전원을 투입하세요.
+          </li>
+          <li class="p-2 rounded bg-slate-800/50 border border-slate-700/40 text-slate-400" id="step-2">
+            2. 기동 버튼(ON)을 누르면 Y결선으로 낮은 전류로 초기 기동합니다.
+          </li>
+          <li class="p-2 rounded bg-slate-800/50 border border-slate-700/40 text-slate-400" id="step-3">
+            3. 타이머 시간 경과 후 델타(Δ) 결선으로 전환되어 정상 정격 운전합니다.
+          </li>
+          <li class="p-2 rounded bg-slate-800/50 border border-slate-700/40 text-slate-400" id="step-4">
+            4. 정지 버튼(OFF)을 누르면 모든 회로가 차단됩니다.
+          </li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- Bottom Footer Legend -->
+    <footer class="pointer-events-auto glass-panel p-3 rounded-xl flex flex-wrap items-center justify-between text-xs gap-4">
+      <div class="flex items-center gap-4">
+        <span class="font-bold text-slate-300">배선 범례:</span>
+        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> R상 (L1)</div>
+        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-white inline-block"></span> S상 (L2)</div>
+        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span> T상 (L3)</div>
+        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span> 제어 전원 L(+)</div>
+        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-slate-400 inline-block"></span> 제어 공통 N(-)</div>
+      </div>
+      <div class="text-slate-400">
+        마우스 우클릭: 드래그 이동 | 좌클릭: 회전 | 스크롤: 확대/축소
+      </div>
+    </footer>
+  </div>
+
+  <!-- Modal: 2D Schematic Popup -->
+  <div id="schematic-modal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm hidden pointer-events-auto">
+    <div class="glass-panel max-w-4xl w-full rounded-2xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col max-h-[90vh]">
+      <div class="p-4 bg-slate-900 border-b border-slate-700 flex justify-between items-center">
+        <h3 class="font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-diagram-project text-purple-400"></i> Y-Δ (스타-델타) 시퀀스 표준 회로도
+        </h3>
+        <button id="btn-close-modal" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex justify-center bg-slate-950">
+        <!-- SVG Interactive Schematic -->
+        <svg viewBox="0 0 900 550" class="w-full h-auto max-h-[70vh]">
+          <style>
+            .wire-r { stroke: #ef4444; stroke-width: 2.5; fill: none; }
+            .wire-s { stroke: #f8fafc; stroke-width: 2.5; fill: none; }
+            .wire-t { stroke: #3b82f6; stroke-width: 2.5; fill: none; }
+            .wire-ctrl { stroke: #fbbf24; stroke-width: 2; fill: none; }
+            .wire-neutral { stroke: #94a3b8; stroke-width: 2; fill: none; }
+            .symbol { fill: #1e293b; stroke: #38bdf8; stroke-width: 2; }
+            .label { fill: #f8fafc; font-size: 13px; font-weight: bold; font-family: sans-serif; }
+            .sub-label { fill: #94a3b8; font-size: 11px; font-family: sans-serif; }
+            .active-glow { filter: drop-shadow(0px 0px 6px #38bdf8); }
+          </style>
+
+          <!-- Main Circuit Section -->
+          <text x="140" y="30" class="label" font-size="16" fill="#38bdf8">【 주회로 (Main) 】</text>
+          
+          <!-- R S T Lines -->
+          <line x1="80" y1="60" x2="80" y2="100" class="wire-r" />
+          <line x1="140" y1="60" x2="140" y2="100" class="wire-s" />
+          <line x1="200" y1="60" x2="200" y2="100" class="wire-t" />
+          <text x="75" y="52" class="label" fill="#ef4444">R</text>
+          <text x="135" y="52" class="label" fill="#f8fafc">S</text>
+          <text x="195" y="52" class="label" fill="#3b82f6">T</text>
+
+          <!-- CB Box -->
+          <rect x="60" y="100" width="160" height="40" rx="6" class="symbol" />
+          <text x="100" y="125" class="label">CB (차단기)</text>
+
+          <!-- CB to Main MC -->
+          <line x1="80" y1="140" x2="80" y2="180" class="wire-r" />
+          <line x1="140" y1="140" x2="140" y2="180" class="wire-s" />
+          <line x1="200" y1="140" x2="200" y2="180" class="wire-t" />
+
+          <!-- Main MC Box -->
+          <rect x="60" y="180" width="160" height="40" rx="6" class="symbol" />
+          <text x="90" y="205" class="label">MC (주접촉기)</text>
+
+          <!-- MC to Motor / MC-Y / MC-D Junction -->
+          <line x1="80" y1="220" x2="80" y2="340" class="wire-r" />
+          <line x1="140" y1="220" x2="140" y2="340" class="wire-s" />
+          <line x1="200" y1="220" x2="200" y2="340" class="wire-t" />
+
+          <!-- Branch to MC-D & MC-Y -->
+          <line x1="80" y1="240" x2="280" y2="240" class="wire-r" />
+          <line x1="140" y1="255" x2="310" y2="255" class="wire-s" />
+          <line x1="200" y1="270" x2="340" y2="270" class="wire-t" />
+
+          <!-- MC-Y Box -->
+          <rect x="260" y="300" width="90" height="40" rx="6" class="symbol" />
+          <text x="275" y="325" class="label">MC-Y</text>
+          <!-- Y Shorting Bar -->
+          <line x1="275" y1="380" x2="335" y2="380" stroke="#f59e0b" stroke-width="3" />
+          <line x1="275" y1="340" x2="275" y2="380" class="wire-r" />
+          <line x1="305" y1="340" x2="305" y2="380" class="wire-s" />
+          <line x1="335" y1="340" x2="335" y2="380" class="wire-t" />
+
+          <!-- MC-D Box -->
+          <rect x="380" y="300" width="90" height="40" rx="6" class="symbol" />
+          <text x="395" y="325" class="label">MC-D</text>
+
+          <!-- Motor Representation -->
+          <circle cx="140" cy="410" r="40" fill="#0f172a" stroke="#38bdf8" stroke-width="3" />
+          <text x="122" y="415" class="label" font-size="16">3상 모터</text>
+          <text x="120" y="355" class="sub-label">U1 V1 W1</text>
+
+          <!-- Delta connection loops to motor U2, V2, W2 -->
+          <line x1="395" y1="270" x2="395" y2="300" class="wire-r" />
+          <line x1="425" y1="255" x2="425" y2="300" class="wire-s" />
+          <line x1="455" y1="240" x2="455" y2="300" class="wire-t" />
+          
+          <path d="M 395 340 L 395 430 L 190 430" class="wire-r" />
+          <path d="M 425 340 L 425 445 L 200 445" class="wire-s" />
+          <path d="M 455 340 L 455 460 L 210 460" class="wire-t" />
+          <text x="215" y="440" class="sub-label">W2 U2 V2</text>
+
+          <!-- Control Circuit Section -->
+          <text x="620" y="30" class="label" font-size="16" fill="#fbbf24">【 제어회로 (Control) 】</text>
+
+          <!-- Control Power Rails -->
+          <line x1="520" y1="60" x2="850" y2="60" class="wire-ctrl" />
+          <text x="480" y="65" class="label" fill="#fbbf24">L(+)</text>
+          <line x1="520" y1="490" x2="850" y2="490" class="wire-neutral" />
+          <text x="480" y="495" class="label" fill="#94a3b8">N(-)</text>
+
+          <!-- STOP Switch -->
+          <circle cx="560" cy="100" r="12" fill="#ef4444" />
+          <text x="542" y="80" class="sub-label">OFF (정지)</text>
+          <line x1="560" y1="60" x2="560" y2="88" class="wire-ctrl" />
+          <line x1="560" y1="112" x2="560" y2="150" class="wire-ctrl" />
+
+          <!-- START Switch & Self Holding -->
+          <circle cx="560" cy="180" r="12" fill="#10b981" />
+          <text x="542" y="165" class="sub-label">ON (기동)</text>
+          <line x1="560" y1="150" x2="560" y2="168" class="wire-ctrl" />
+          <line x1="560" y1="192" x2="560" y2="240" class="wire-ctrl" />
+
+          <!-- MC Aux Contact (Parallel to START) -->
+          <line x1="510" y1="150" x2="510" y2="240" class="wire-ctrl" />
+          <line x1="510" y1="150" x2="560" y2="150" class="wire-ctrl" />
+          <line x1="510" y1="240" x2="560" y2="240" class="wire-ctrl" />
+          <rect x="495" y="180" width="30" height="25" fill="#1e293b" stroke="#fbbf24" />
+          <text x="485" y="175" class="sub-label">MC a접점</text>
+
+          <!-- Timer Coil & Contacts -->
+          <line x1="560" y1="240" x2="650" y2="240" class="wire-ctrl" />
+          <rect x="635" y="270" width="30" height="40" rx="4" fill="#1e293b" stroke="#a855f7" />
+          <text x="630" y="260" class="sub-label">D-sw(타이머)</text>
+          <line x1="650" y1="240" x2="650" y2="270" class="wire-ctrl" />
+          <line x1="650" y1="310" x2="650" y2="490" class="wire-neutral" />
+
+          <!-- Interlock MC-Y Branch -->
+          <line x1="560" y1="240" x2="560" y2="330" class="wire-ctrl" />
+          <rect x="545" y="330" width="30" height="30" fill="#1e293b" stroke="#ef4444" />
+          <text x="515" y="348" class="sub-label">MC-D b접점</text>
+          <line x1="560" y1="360" x2="560" y2="420" class="wire-ctrl" />
+          <rect x="545" y="420" width="30" height="35" rx="4" fill="#3b82f6" />
+          <text x="542" y="442" class="label" font-size="11">MC-Y</text>
+          <line x1="560" y1="455" x2="560" y2="490" class="wire-neutral" />
+
+          <!-- Interlock MC-D Branch -->
+          <line x1="740" y1="60" x2="740" y2="330" class="wire-ctrl" />
+          <rect x="725" y="330" width="30" height="30" fill="#1e293b" stroke="#ef4444" />
+          <text x="760" y="348" class="sub-label">MC-Y b접점</text>
+          <line x1="740" y1="360" x2="740" y2="420" class="wire-ctrl" />
+          <rect x="725" y="420" width="30" height="35" rx="4" fill="#3b82f6" />
+          <text x="722" y="442" class="label" font-size="11">MC-D</text>
+          <line x1="740" y1="455" x2="740" y2="490" class="wire-neutral" />
+
+          <!-- Indicator Lamps -->
+          <!-- RL Light (Red) -->
+          <line x1="800" y1="60" x2="800" y2="420" class="wire-ctrl" />
+          <circle cx="800" cy="435" r="14" fill="#ef4444" stroke="#f8fafc" stroke-width="1.5" />
+          <text x="793" y="440" class="label" font-size="10">RL</text>
+          <line x1="800" y1="449" x2="800" y2="490" class="wire-neutral" />
+
+          <!-- GL Light (Green) -->
+          <line x1="850" y1="60" x2="850" y2="420" class="wire-ctrl" />
+          <circle cx="850" cy="435" r="14" fill="#10b981" stroke="#f8fafc" stroke-width="1.5" />
+          <text x="843" y="440" class="label" font-size="10">GL</text>
+          <line x1="850" y1="449" x2="850" y2="490" class="wire-neutral" />
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Simulator Logic -->
+  <script>
+    // State Machine Variables
+    const STATE_OFF = 0;
+    const STATE_Y_START = 1;
+    const STATE_DELTA_RUN = 2;
+
+    let currentState = STATE_OFF;
+    let cbPowerOn = false;
+    let timerDuration = 5.0; // seconds
+    let timerElapsed = 0.0;
+    let showWires = true;
+
+    // Electrical Metrics
+    let currentVoltage = 0;
+    let currentAmps = 0.0;
+    let currentRpm = 0;
+    let targetRpm = 0;
+
+    // 3D Objects References
+    let scene, camera, renderer, controls;
+    let motorShaftGroup;
+    let wireGroup;
+    let mcYPlunger, mcDPlunger, mcMainPlunger, cbHandle;
+    let lampRLMesh, lampGLMesh, timerDialMesh;
+    let btnStartMesh, btnStopMesh;
+
+    // Materials Store for Dynamic Recoloring
+    const materials = {};
+
+    // Initialization
+    window.addEventListener('DOMContentLoaded', () => {
+      init3D();
+      setupUIEventListeners();
+      animate(0);
+    });
+
+    function init3D() {
+      const container = document.getElementById('canvas-container');
+
+      // 1. Scene Setup
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0f172a);
+      scene.fog = new THREE.FogExp2(0x0f172a, 0.025);
+
+      // 2. Camera Setup
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.set(0, 8, 14);
+
+      // 3. Renderer Setup
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
+
+      // 4. Orbit Controls
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.maxPolarAngle = Math.PI / 2 + 0.1; // Limit under floor
+      controls.target.set(0, 2, 0);
+
+      // 5. Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      dirLight.position.set(10, 20, 15);
+      dirLight.castShadow = true;
+      dirLight.shadow.mapSize.width = 2048;
+      dirLight.shadow.mapSize.height = 2048;
+      dirLight.shadow.camera.near = 0.5;
+      dirLight.shadow.camera.far = 50;
+      dirLight.shadow.camera.left = -10;
+      dirLight.shadow.camera.right = 10;
+      dirLight.shadow.camera.top = 10;
+      dirLight.shadow.camera.bottom = -10;
+      scene.add(dirLight);
+
+      const pointLight = new THREE.PointLight(0x38bdf8, 0.5, 20);
+      pointLight.position.set(0, 5, 2);
+      scene.add(pointLight);
+
+      // 6. Build Scene Objects
+      wireGroup = new THREE.Group();
+      scene.add(wireGroup);
+
+      buildEnvironment();
+      buildControlPanel();
+      buildMotor();
+      buildWires();
+
+      // Window Resize Listener
+      window.addEventListener('resize', onWindowResize);
+    }
+
+    // -------------------------------------------------------------
+    // 3D MODEL BUILDERS
+    // -------------------------------------------------------------
+
+    function buildEnvironment() {
+      // Floor Base
+      const floorGeo = new THREE.PlaneGeometry(40, 40);
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+      const floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -0.01;
+      floor.receiveShadow = true;
+      scene.add(floor);
+
+      // Grid Helper
+      const grid = new THREE.GridHelper(40, 40, 0x3b82f6, 0x334155);
+      grid.position.y = 0;
+      scene.add(grid);
+    }
+
+    function buildControlPanel() {
+      // Panel Base Backboard (DIN Rail Enclosure Back)
+      const boardGeo = new THREE.BoxGeometry(10, 7, 0.4);
+      const boardMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.2 });
+      const board = new THREE.Mesh(boardGeo, boardMat);
+      board.position.set(-1, 4.5, -2);
+      board.castShadow = true;
+      board.receiveShadow = true;
+      scene.add(board);
+
+      // Aluminum DIN Rails
+      const railGeo = new THREE.BoxGeometry(9, 0.2, 0.1);
+      const railMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.3 });
+      
+      const rail1 = new THREE.Mesh(railGeo, railMat);
+      rail1.position.set(-1, 6.2, -1.75);
+      scene.add(rail1);
+
+      const rail2 = new THREE.Mesh(railGeo, railMat);
+      rail2.position.set(-1, 3.8, -1.75);
+      scene.add(rail2);
+
+      // --- Component 1: CB (Circuit Breaker) ---
+      const cbGroup = new THREE.Group();
+      cbGroup.position.set(-4, 6.2, -1.6);
+      
+      const cbBodyGeo = new THREE.BoxGeometry(1.2, 1.8, 1.0);
+      const cbBodyMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
+      const cbBody = new THREE.Mesh(cbBodyGeo, cbBodyMat);
+      cbGroup.add(cbBody);
+
+      // CB Toggle Handle
+      const handleGeo = new THREE.BoxGeometry(0.3, 0.5, 0.3);
+      const handleMat = new THREE.MeshStandardMaterial({ color: 0xd97706 });
+      cbHandle = new THREE.Mesh(handleGeo, handleMat);
+      cbHandle.position.set(0, 0, 0.5);
+      cbHandle.rotation.x = -0.4; // Initial OFF position
+      cbGroup.add(cbHandle);
+
+      addLabel(cbGroup, "CB (차단기)", 0, 1.1, 0);
+      scene.add(cbGroup);
+
+      // --- Component 2: Main MC (주접촉기) ---
+      const mcMainGroup = createContactor("MC (주)", 0x1e293b);
+      mcMainGroup.position.set(-1.8, 6.2, -1.6);
+      scene.add(mcMainGroup);
+      mcMainPlunger = mcMainGroup.getObjectByName("plunger");
+
+      // --- Component 3: MC-Y (스타접촉기) ---
+      const mcYGroup = createContactor("MC-Y (스타)", 0x1e293b);
+      mcYGroup.position.set(-3.5, 3.8, -1.6);
+      scene.add(mcYGroup);
+      mcYPlunger = mcYGroup.getObjectByName("plunger");
+
+      // --- Component 4: MC-D (델타접촉기) ---
+      const mcDGroup = createContactor("MC-D (델타)", 0x1e293b);
+      mcDGroup.position.set(-1.5, 3.8, -1.6);
+      scene.add(mcDGroup);
+      mcDPlunger = mcDGroup.getObjectByName("plunger");
+
+      // --- Component 5: Electronic Timer (D-sw) ---
+      const timerGroup = new THREE.Group();
+      timerGroup.position.set(0.5, 3.8, -1.6);
+      
+      const timerBodyGeo = new THREE.BoxGeometry(1.0, 1.5, 1.0);
+      const timerBodyMat = new THREE.MeshStandardMaterial({ color: 0x475569 });
+      const timerBody = new THREE.Mesh(timerBodyGeo, timerBodyMat);
+      timerGroup.add(timerBody);
+
+      // Timer Dial
+      const dialGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.1, 32);
+      const dialMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc });
+      timerDialMesh = new THREE.Mesh(dialGeo, dialMat);
+      timerDialMesh.rotation.x = Math.PI / 2;
+      timerDialMesh.position.set(0, 0.2, 0.5);
+      timerGroup.add(timerDialMesh);
+
+      addLabel(timerGroup, "타이머 (D-sw)", 0, 1.0, 0);
+      scene.add(timerGroup);
+
+      // --- Control Buttons (ON / OFF) & Indicator Lamps (RL / GL) Box ---
+      const consoleBoxGroup = new THREE.Group();
+      consoleBoxGroup.position.set(2.5, 4.8, -1.6);
+
+      const boxGeo = new THREE.BoxGeometry(1.8, 4.2, 0.8);
+      const boxMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 });
+      const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+      consoleBoxGroup.add(boxMesh);
+
+      // Red OFF Button
+      const btnStopGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 32);
+      const btnStopMat = new THREE.MeshStandardMaterial({ color: 0xd97706 });
+      btnStopMesh = new THREE.Mesh(btnStopGeo, btnStopMat);
+      btnStopMesh.rotation.x = Math.PI / 2;
+      btnStopMesh.position.set(-0.4, 1.2, 0.45);
+      consoleBoxGroup.add(btnStopMesh);
+      addLabel(consoleBoxGroup, "OFF", -0.4, 1.7, 0.4);
+
+      // Green ON Button
+      const btnStartGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 32);
+      const btnStartMat = new THREE.MeshStandardMaterial({ color: 0x059669 });
+      btnStartMesh = new THREE.Mesh(btnStartGeo, btnStartMat);
+      btnStartMesh.rotation.x = Math.PI / 2;
+      btnStartMesh.position.set(-0.4, 0.2, 0.45);
+      consoleBoxGroup.add(btnStartMesh);
+      addLabel(consoleBoxGroup, "ON", -0.4, 0.7, 0.4);
+
+      // Red Lamp RL
+      const lampRLGeo = new THREE.SphereGeometry(0.25, 16, 16);
+      materials.lampRL = new THREE.MeshStandardMaterial({ color: 0x7f1d1d, emissive: 0x000000, roughness: 0.2 });
+      lampRLMesh = new THREE.Mesh(lampRLGeo, materials.lampRL);
+      lampRLMesh.position.set(0.4, -0.8, 0.45);
+      consoleBoxGroup.add(lampRLMesh);
+      addLabel(consoleBoxGroup, "RL", 0.4, -0.4, 0.4);
+
+      // Green Lamp GL
+      const lampGLGeo = new THREE.SphereGeometry(0.25, 16, 16);
+      materials.lampGL = new THREE.MeshStandardMaterial({ color: 0x064e3b, emissive: 0x000000, roughness: 0.2 });
+      lampGLMesh = new THREE.Mesh(lampGLGeo, materials.lampGL);
+      lampGLMesh.position.set(0.4, -1.5, 0.45);
+      consoleBoxGroup.add(lampGLMesh);
+      addLabel(consoleBoxGroup, "GL", 0.4, -1.1, 0.4);
+
+      scene.add(consoleBoxGroup);
+    }
+
+    function createContactor(titleText, baseColor) {
+      const group = new THREE.Group();
+      
+      const bodyGeo = new THREE.BoxGeometry(1.4, 1.8, 1.1);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.4 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      group.add(body);
+
+      // Actuator / Plunger indicator center
+      const plungerGeo = new THREE.BoxGeometry(0.5, 0.5, 0.2);
+      const plungerMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8 });
+      const plunger = new THREE.Mesh(plungerGeo, plungerMat);
+      plunger.name = "plunger";
+      plunger.position.set(0, 0, 0.55);
+      group.add(plunger);
+
+      addLabel(group, titleText, 0, 1.1, 0);
+      return group;
+    }
+
+    function buildMotor() {
+      const motorGroup = new THREE.Group();
+      motorGroup.position.set(2.5, 1.2, 2.5);
+
+      // Motor Stator / Housing Body
+      const bodyGeo = new THREE.CylinderGeometry(1.2, 1.2, 2.6, 32);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.4, metalness: 0.3 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.rotation.z = Math.PI / 2;
+      body.castShadow = true;
+      motorGroup.add(body);
+
+      // Cooling Fins
+      for (let i = -1.0; i <= 1.0; i += 0.2) {
+        const finGeo = new THREE.CylinderGeometry(1.28, 1.28, 0.08, 32);
+        const finMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8 });
+        const fin = new THREE.Mesh(finGeo, finMat);
+        fin.rotation.z = Math.PI / 2;
+        fin.position.x = i;
+        motorGroup.add(fin);
+      }
+
+      // Motor Base Feet
+      const footGeo = new THREE.BoxGeometry(2.2, 0.2, 2.4);
+      const footMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+      const foot = new THREE.Mesh(footGeo, footMat);
+      foot.position.set(0, -1.2, 0);
+      motorGroup.add(foot);
+
+      // Terminal Box on top of Motor
+      const termBoxGeo = new THREE.BoxGeometry(0.8, 0.5, 0.8);
+      const termBoxMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
+      const termBox = new THREE.Mesh(termBoxGeo, termBoxMat);
+      termBox.position.set(0, 1.35, 0);
+      motorGroup.add(termBox);
+      addLabel(motorGroup, "단자대 (U1,V1,W1 / W2,U2,V2)", 0, 1.8, 0);
+
+      // Motor Rotor Shaft & Pulse Indicator Wheel
+      motorShaftGroup = new THREE.Group();
+      motorShaftGroup.position.set(-1.3, 0, 0);
+
+      const shaftGeo = new THREE.CylinderGeometry(0.25, 0.25, 1.2, 16);
+      const shaftMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.9, roughness: 0.1 });
+      const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+      shaft.rotation.z = Math.PI / 2;
+      shaft.position.x = -0.4;
+      motorShaftGroup.add(shaft);
+
+      // Keyway / Visual Rotational Marker on Shaft
+      const keyGeo = new THREE.BoxGeometry(0.5, 0.08, 0.35);
+      const keyMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b });
+      const key = new THREE.Mesh(keyGeo, keyMat);
+      key.position.set(-0.6, 0.2, 0);
+      motorShaftGroup.add(key);
+
+      motorGroup.add(motorShaftGroup);
+
+      addLabel(motorGroup, "3상 유도전동기", 0, -1.6, 0);
+      scene.add(motorGroup);
+    }
+
+    function buildWires() {
+      // Create Wires using Curved TubeGeometries
+      const wireConfigs = [
+        // R S T Mains to CB
+        { points: [[-4, 8, -1.6], [-4, 7.1, -1.6]], color: 0xef4444 }, // R
+        { points: [[-3.7, 8, -1.6], [-3.7, 7.1, -1.6]], color: 0xffffff }, // S
+        { points: [[-3.4, 8, -1.6], [-3.4, 7.1, -1.6]], color: 0x3b82f6 }, // T
+
+        // CB to Main MC
+        { points: [[-4, 5.3, -1.6], [-2.3, 5.3, -1.6], [-2.3, 7.1, -1.6]], color: 0xef4444 },
+        { points: [[-3.7, 5.3, -1.5], [-2.0, 5.3, -1.5], [-2.0, 7.1, -1.6]], color: 0xffffff },
+        { points: [[-3.4, 5.3, -1.4], [-1.7, 5.3, -1.4], [-1.7, 7.1, -1.6]], color: 0x3b82f6 },
+
+        // Main MC to Motor Terminal Box
+        { points: [[-1.8, 5.3, -1.6], [-1.8, 1.8, 0], [2.2, 1.8, 2.5]], color: 0xef4444 },
+        { points: [[-1.5, 5.3, -1.6], [-1.5, 1.7, 0], [2.5, 1.7, 2.5]], color: 0xffffff },
+        { points: [[-1.2, 5.3, -1.6], [-1.2, 1.6, 0], [2.8, 1.6, 2.5]], color: 0x3b82f6 },
+
+        // MC-Y & MC-D Inter-connections
+        { points: [[-3.5, 4.7, -1.6], [-3.5, 2.7, -1.6], [-1.5, 2.7, -1.6], [-1.5, 2.9, -1.6]], color: 0xf59e0b },
+
+        // Control Circuit Power Wires (Yellow L+, Gray N-)
+        { points: [[-3.7, 7.1, -1.6], [2.5, 7.1, -1.6], [2.5, 6.5, -1.6]], color: 0xfbbf24 }, // Control L(+)
+        { points: [[0.5, 3.0, -1.6], [2.5, 3.0, -1.6], [2.5, 3.3, -1.6]], color: 0x94a3b8 }, // Neutral N(-)
+      ];
+
+      wireConfigs.forEach(cfg => {
+        const curvePoints = cfg.points.map(p => new THREE.Vector3(...p));
+        const curve = new THREE.CatmullRomCurve3(curvePoints);
+        const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.04, 8, false);
+        const tubeMat = new THREE.MeshStandardMaterial({ color: cfg.color, roughness: 0.3 });
+        const wireMesh = new THREE.Mesh(tubeGeo, tubeMat);
+        wireGroup.add(wireMesh);
+      });
+    }
+
+    function addLabel(parentGroup, text, x, y, z) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+      ctx.fillRect(0, 0, 256, 64);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#38bdf8';
+      ctx.strokeRect(2, 2, 252, 60);
+      ctx.font = 'Bold 22px Pretendard, sans-serif';
+      ctx.fillStyle = '#f8fafc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 128, 32);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.position.set(x, y, z);
+      sprite.scale.set(1.2, 0.3, 1.0);
+      parentGroup.add(sprite);
+    }
+
+    // -------------------------------------------------------------
+    // SIMULATION ENGINE & LOGIC
+    // -------------------------------------------------------------
+
+    function setCircuitBreaker(state) {
+      cbPowerOn = state;
+      const btn = document.getElementById('btn-cb-toggle');
+      const text = document.getElementById('cb-status-text');
+
+      if (cbPowerOn) {
+        cbHandle.rotation.x = 0.4; // ON Pos
+        btn.textContent = '차단 (OFF)';
+        btn.className = 'px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition shadow';
+        text.textContent = '전원 투입됨 (ON)';
+        text.className = 'text-[10px] text-emerald-400 font-bold';
+        currentVoltage = 380;
+        updateStepHighlight(2);
+      } else {
+        cbHandle.rotation.x = -0.4; // OFF Pos
+        btn.textContent = '투입 (ON)';
+        btn.className = 'px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition shadow';
+        text.textContent = '차단됨 (OFF)';
+        text.className = 'text-[10px] text-slate-400';
+        stopMotorSequence();
+        currentVoltage = 0;
+        updateStepHighlight(1);
+      }
+      updateDashboard();
+    }
+
+    function startMotorSequence() {
+      if (!cbPowerOn) {
+        alert("배선용 차단기(CB)를 먼저 투입(ON)하여 주전원을 공급하세요.");
+        return;
+      }
+
+      if (currentState !== STATE_OFF) return;
+
+      // Enter Y-Start Mode
+      currentState = STATE_Y_START;
+      timerElapsed = 0.0;
+
+      // Contactor Mechanical Actions
+      mcMainPlunger.position.z = 0.4;
+      mcYPlunger.position.z = 0.4;
+      mcDPlunger.position.z = 0.55;
+
+      // Lights Status: RL ON (Start/Y-mode warning red light)
+      materials.lampRL.emissive.setHex(0xef4444);
+      materials.lampGL.emissive.setHex(0x000000);
+
+      targetRpm = 900; // Y-mode reduced speed/torque initial ramp
+      updateStepHighlight(2);
+    }
+
+    function transitionToDeltaMode() {
+      if (currentState !== STATE_Y_START) return;
+
+      currentState = STATE_DELTA_RUN;
+
+      // Contactor Mechanical Transition (MC-Y OFF -> MC-D ON)
+      mcYPlunger.position.z = 0.55;
+      mcDPlunger.position.z = 0.4;
+
+      // Lights Status: RL OFF, GL ON (Green Delta Run Light)
+      materials.lampRL.emissive.setHex(0x000000);
+      materials.lampGL.emissive.setHex(0x10b981);
+
+      targetRpm = 1750; // Full Rated Speed in Delta Mode
+      updateStepHighlight(3);
+    }
+
+    function stopMotorSequence() {
+      currentState = STATE_OFF;
+      timerElapsed = 0.0;
+
+      // Reset Mechanical Contactors
+      if (mcMainPlunger) mcMainPlunger.position.z = 0.55;
+      if (mcYPlunger) mcYPlunger.position.z = 0.55;
+      if (mcDPlunger) mcDPlunger.position.z = 0.55;
+
+      // Turn OFF Lamps
+      if (materials.lampRL) materials.lampRL.emissive.setHex(0x000000);
+      if (materials.lampGL) materials.lampGL.emissive.setHex(0x000000);
+
+      targetRpm = 0;
+      document.getElementById('timer-progress').style.width = '0%';
+      if (cbPowerOn) updateStepHighlight(2);
+      else updateStepHighlight(1);
+    }
+
+    function updateStepHighlight(stepNum) {
+      for (let i = 1; i <= 4; i++) {
+        const el = document.getElementById(`step-${i}`);
+        if (!el) continue;
+        if (i === stepNum) {
+          el.className = "p-2 rounded bg-blue-900/40 border border-blue-500/60 text-blue-300 font-bold shadow";
+        } else {
+          el.className = "p-2 rounded bg-slate-800/50 border border-slate-700/40 text-slate-400";
+        }
+      }
+    }
+
+    function updateDashboard() {
+      document.getElementById('display-voltage').textContent = `${currentVoltage} V`;
+      document.getElementById('display-current').textContent = `${currentAmps.toFixed(1)} A`;
+      document.getElementById('display-rpm').textContent = `${Math.round(currentRpm)} RPM`;
+
+      const badge = document.getElementById('status-badge');
+      if (currentState === STATE_OFF) {
+        badge.textContent = "OFF (정지)";
+        badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700";
+      } else if (currentState === STATE_Y_START) {
+        badge.textContent = "Y-기동 중 (Star)";
+        badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse";
+      } else if (currentState === STATE_DELTA_RUN) {
+        badge.textContent = "Δ-정상 운전 (Delta)";
+        badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+      }
+    }
+
+    // -------------------------------------------------------------
+    // ANIMATION LOOP & EVENTS
+    // -------------------------------------------------------------
+
+    let lastTime = 0;
+
+    function animate(currentTime) {
+      requestAnimationFrame(animate);
+
+      const deltaTime = (currentTime - lastTime) / 1000 || 0;
+      lastTime = currentTime;
+
+      // Handle Timer Logic in Y-Start
+      if (currentState === STATE_Y_START) {
+        timerElapsed += deltaTime;
+        const progressPct = Math.min((timerElapsed / timerDuration) * 100, 100);
+        document.getElementById('timer-progress').style.width = `${progressPct}%`;
+        
+        // Rotate Timer Dial visually
+        if (timerDialMesh) timerDialMesh.rotation.z += deltaTime * 2;
+
+        if (timerElapsed >= timerDuration) {
+          transitionToDeltaMode();
+        }
+      }
+
+      // Smooth RPM Ramping
+      currentRpm += (targetRpm - currentRpm) * Math.min(deltaTime * 3, 1.0);
+
+      // Rotate 3D Motor Shaft
+      if (motorShaftGroup && currentRpm > 1) {
+        motorShaftGroup.rotation.x -= (currentRpm / 60) * Math.PI * 2 * deltaTime;
+      }
+
+      // Dynamic Current (Amps) Simulation
+      if (currentState === STATE_Y_START) {
+        // Y-mode: 1/3 starting current (~12A)
+        currentAmps = 12.5 + Math.sin(currentTime * 0.01) * 0.5;
+      } else if (currentState === STATE_DELTA_RUN) {
+        // Delta mode: Full rated load current (~32A)
+        currentAmps = 32.0 + Math.sin(currentTime * 0.01) * 1.2;
+      } else {
+        currentAmps = 0.0;
+      }
+
+      updateDashboard();
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    function setupUIEventListeners() {
+      // CB Toggle
+      document.getElementById('btn-cb-toggle').addEventListener('click', () => {
+        setCircuitBreaker(!cbPowerOn);
+      });
+
+      // Start Button
+      document.getElementById('btn-start').addEventListener('click', () => {
+        // Animate 3D button press
+        btnStartMesh.position.z = 0.35;
+        setTimeout(() => { btnStartMesh.position.z = 0.45; }, 150);
+        startMotorSequence();
+      });
+
+      // Stop Button
+      document.getElementById('btn-stop').addEventListener('click', () => {
+        btnStopMesh.position.z = 0.35;
+        setTimeout(() => { btnStopMesh.position.z = 0.45; }, 150);
+        stopMotorSequence();
+      });
+
+      // Timer Range Slider
+      const rangeInput = document.getElementById('timer-range');
+      rangeInput.addEventListener('input', (e) => {
+        timerDuration = parseFloat(e.target.value);
+        document.getElementById('timer-val-display').textContent = `${timerDuration.toFixed(1)} 초`;
+      });
+
+      // Toggle Wires Visibility
+      document.getElementById('btn-toggle-wires').addEventListener('click', () => {
+        showWires = !showWires;
+        wireGroup.visible = showWires;
+        document.getElementById('wire-status-text').textContent = showWires ? 'ON' : 'OFF';
+        document.getElementById('wire-status-text').className = showWires ? 'text-emerald-400 font-bold' : 'text-slate-500 font-bold';
+      });
+
+      // Reset Camera View
+      document.getElementById('btn-reset-view').addEventListener('click', () => {
+        camera.position.set(0, 8, 14);
+        controls.target.set(0, 2, 0);
+      });
+
+      // Schematic Modal Toggle
+      const modal = document.getElementById('schematic-modal');
+      document.getElementById('btn-toggle-schematic').addEventListener('click', () => {
+        modal.classList.remove('hidden');
+      });
+      document.getElementById('btn-close-modal').addEventListener('click', () => {
+        modal.classList.add('hidden');
+      });
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+  </script>
+</body>
+</html>
