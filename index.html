@@ -65,6 +65,34 @@
     color:var(--yellow);
   }
 
+
+
+  /* ---------- 전기 실습 페이지 바로가기 ---------- */
+  .practice-nav{
+    position:fixed; top:62px; left:0; right:0; z-index:49;
+    display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:10px;
+    padding:10px 20px;
+    background:rgba(14,42,61,.94);
+    border-top:1px solid rgba(247,245,238,.10);
+    border-bottom:1px solid rgba(247,245,238,.16);
+    backdrop-filter:blur(8px);
+  }
+  .practice-nav a{
+    display:inline-flex; align-items:center; justify-content:center;
+    min-height:38px; padding:7px 18px;
+    border:1px solid rgba(240,180,41,.65); border-radius:3px;
+    color:var(--white); text-decoration:none; font-size:13px; font-weight:600;
+    letter-spacing:.01em; transition:background .15s ease,color .15s ease,border-color .15s ease;
+  }
+  .practice-nav a:hover,.practice-nav a:focus-visible{
+    background:var(--yellow); color:var(--ink); border-color:var(--yellow); outline:none;
+  }
+  @media (max-width:560px){
+    .practice-nav{top:54px; gap:6px; padding:8px 10px;}
+    .practice-nav a{flex:1 1 calc(50% - 6px); padding:7px 8px; font-size:12px;}
+    .topbar{padding:14px 16px; font-size:10px;}
+  }
+
   /* ---------- hero / title block ---------- */
   .hero{
     position:relative;
@@ -451,6 +479,14 @@
   <span>ELEC-CAP-2026 · PLC CONVEYOR SYSTEM</span>
   <span class="sheet-tag">SHT 01/01</span>
 </div>
+
+<!-- 전기 실습 페이지 바로가기 -->
+<nav class="practice-nav" aria-label="전기 실습 페이지">
+  <a href="motor3state.html">3상모터</a>
+  <a href="interlock.html">인터록</a>
+  <a href="consistency.html">자기유지실습</a>
+  <a href="y_delta.html">Y-Δ</a>
+</nav>
 
 <!-- ===================== HERO ===================== -->
 <header class="hero">
